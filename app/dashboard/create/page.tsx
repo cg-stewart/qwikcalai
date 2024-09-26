@@ -1,143 +1,259 @@
 "use client";
 
 import { useState } from "react";
+import { OpenAI } from "openai";
+import { zodResponseFormat } from "openai/helpers/zod";
+import { z } from "zod";
+import ical from "ical-generator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UploadCloud, Image, AlertCircle } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import dotenv from "dotenv";
 
-export default function Create() {
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
+dotenv.config();
+// Define the schema for our calendar event
+const calendarEventSchema = z.object({
+  summary: z.string(),
+  start: z.string(),
+  end: z.string(),
+  location: z.string().optional(),
+  description: z.string().optional(),
+});
+
+type CalendarEvent = z.infer<typeof calendarEventSchema>;
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+export default function CalendarEventExtractor() {
+  const [files, setFiles] = useState<File[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setFile(e.target.files[0]);
+      setFiles(Array.from(e.target.files));
     }
   };
 
-  const handleUpload = async () => {
-    if (!file) return;
-    setUploading(true);
-    // TODO: Implement file upload and AI processing logic
-    await new Promise((resolve) => setTimeout(resolve, 2000)); // Simulating upload
-    setUploading(false);
-    setFile(null);
-    // TODO: Navigate to edit page or show extracted events
+  const extractEvents = async () => {
+    setLoading(true);
+    const extractedEvents: CalendarEvent[] = [];
+
+    for (const file of files) {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      await new Promise<void>((resolve) => {
+        reader.onload = async () => {
+          const base64Image = reader.result as string;
+
+          try {
+            const completion = await openai.beta.chat.completions.parse({
+              model: "gpt-4o-2024-08-06",
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "You are an AI assistant that extracts calendar event information from images. Please analyze the image and provide the event details in the required format.",
+                },
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: "Please extract the calendar event information from this image:",
+                    },
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: base64Image,
+                        detail: "high",
+                      },
+                    },
+                  ],
+                },
+              ],
+              response_format: zodResponseFormat(
+                z.array(calendarEventSchema),
+                "calendar_events",
+              ),
+            });
+
+            const extractedEventsFromImage =
+              completion.choices[0].message.parsed;
+            if (Array.isArray(extractedEventsFromImage)) {
+              extractedEvents.push(...extractedEventsFromImage);
+            } else {
+              console.warn(
+                "Unexpected response format:",
+                extractedEventsFromImage,
+              );
+            }
+          } catch (error) {
+            console.error("Error extracting events:", error);
+          }
+
+          resolve();
+        };
+      });
+    }
+
+    setEvents(extractedEvents);
+    setLoading(false);
+  };
+
+  const handleEventChange = (
+    index: number,
+    field: keyof CalendarEvent,
+    value: string,
+  ) => {
+    const updatedEvents = [...events];
+    updatedEvents[index] = { ...updatedEvents[index], [field]: value };
+    setEvents(updatedEvents);
+  };
+
+  const generateICS = () => {
+    const calendar = ical({ name: "Extracted Events" });
+
+    events.forEach((event) => {
+      calendar.createEvent({
+        start: new Date(event.start),
+        end: new Date(event.end),
+        summary: event.summary,
+        description: event.description,
+        location: event.location,
+      });
+    });
+
+    const icsString = calendar.toString();
+    const blob = new Blob([icsString], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "events.ics");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
-    <div className="p-6 space-y-6 min-h-screen w-full">
-      <h1 className="text-3xl font-bold">Create Calendar Events</h1>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Upload Image</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleUpload();
-              }}
-              className="space-y-4"
-            >
-              <div className="flex items-center justify-center w-full">
-                <Label
-                  htmlFor="image-upload"
-                  className="flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100"
-                >
-                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <UploadCloud className="w-10 h-10 mb-3 text-gray-400" />
-                    <p className="mb-2 text-sm text-gray-500">
-                      <span className="font-semibold">Click to upload</span> or
-                      drag and drop
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      PNG, JPG or GIF (MAX. 800x400px)
-                    </p>
-                  </div>
-                  <Input
-                    id="image-upload"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </Label>
-              </div>
-              {file && (
-                <p className="text-sm text-gray-500">
-                  Selected file: {file.name}
-                </p>
-              )}
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={!file || uploading}
-              >
-                {uploading ? "Processing..." : "Extract Events"}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>How It Works</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <div className="bg-purple-100 p-2 rounded-full">
-                <Image className="w-6 h-6 text-purple-600" />
-              </div>
-              <p>Upload an image of your schedule or event details</p>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="bg-blue-100 p-2 rounded-full">
-                <UploadCloud className="w-6 h-6 text-blue-600" />
-              </div>
-              <p>Our AI processes the image and extracts event information</p>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="bg-green-100 p-2 rounded-full">
-                <AlertCircle className="w-6 h-6 text-green-600" />
-              </div>
-              <p>
-                Review and edit the extracted events before adding to your
-                calendar
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Alert>
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Tip</AlertTitle>
-        <AlertDescription>
-          For best results, ensure your image is clear and well-lit. Text should
-          be easily readable.
-        </AlertDescription>
-      </Alert>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Supported Formats</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>Our AI can extract information from various formats, including:</p>
-          <ul className="list-disc list-inside mt-2 space-y-1">
-            <li>Handwritten notes</li>
-            <li>Printed schedules</li>
-            <li>Digital calendar screenshots</li>
-            <li>Event flyers and posters</li>
-          </ul>
-        </CardContent>
-      </Card>
+    <div className="p-4 max-w-4xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">Calendar Event Extractor</h1>
+      <Input
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        multiple
+        className="mb-4"
+      />
+      <Button
+        onClick={extractEvents}
+        disabled={files.length === 0 || loading}
+        className="mb-4"
+      >
+        {loading ? "Extracting..." : "Extract Events"}
+      </Button>
+      {events.length > 0 && (
+        <>
+          <div className="mb-4">
+            {events.map((event, index) => (
+              <Card key={index} className="mb-4">
+                <CardHeader>
+                  <CardTitle>{event.summary}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Accordion type="single" collapsible>
+                    <AccordionItem value="details">
+                      <AccordionTrigger>Event Details</AccordionTrigger>
+                      <AccordionContent>
+                        <div className="space-y-2">
+                          <div>
+                            <Label htmlFor={`summary-${index}`}>Summary</Label>
+                            <Input
+                              id={`summary-${index}`}
+                              value={event.summary}
+                              onChange={(e) =>
+                                handleEventChange(
+                                  index,
+                                  "summary",
+                                  e.target.value,
+                                )
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`start-${index}`}>Start</Label>
+                            <Input
+                              id={`start-${index}`}
+                              value={event.start}
+                              onChange={(e) =>
+                                handleEventChange(
+                                  index,
+                                  "start",
+                                  e.target.value,
+                                )
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`end-${index}`}>End</Label>
+                            <Input
+                              id={`end-${index}`}
+                              value={event.end}
+                              onChange={(e) =>
+                                handleEventChange(index, "end", e.target.value)
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`location-${index}`}>
+                              Location
+                            </Label>
+                            <Input
+                              id={`location-${index}`}
+                              value={event.location || ""}
+                              onChange={(e) =>
+                                handleEventChange(
+                                  index,
+                                  "location",
+                                  e.target.value,
+                                )
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`description-${index}`}>
+                              Description
+                            </Label>
+                            <Input
+                              id={`description-${index}`}
+                              value={event.description || ""}
+                              onChange={(e) =>
+                                handleEventChange(
+                                  index,
+                                  "description",
+                                  e.target.value,
+                                )
+                              }
+                            />
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Button onClick={generateICS}>Generate ICS File</Button>
+        </>
+      )}
     </div>
   );
 }
