@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { OpenAI } from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import ical from "ical-generator";
@@ -28,8 +27,6 @@ const calendarEventSchema = z.object({
 });
 
 type CalendarEvent = z.infer<typeof calendarEventSchema>;
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export default function CalendarEventExtractor() {
   const [files, setFiles] = useState<File[]>([]);
