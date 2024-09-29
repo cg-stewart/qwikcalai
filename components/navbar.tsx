@@ -4,6 +4,9 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import Image from "next/image";
+
+import qwikcalLogo from "@/components/logos/qwikcal-logo-transparent1.png";
 
 const navItems = [
   { href: "#home", label: "Home" },
@@ -48,7 +51,13 @@ export default function Navbar() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="text-2xl font-bold text-primary">
-              QwikCal
+              <Image
+                src={qwikcalLogo}
+                width={200}
+                height={5}
+                alt="QwikCal Logo"
+                className="m-9"
+              />
             </Link>
             <div className="hidden md:flex flex-grow justify-center items-center">
               {navItems.map(({ href, label }) => (

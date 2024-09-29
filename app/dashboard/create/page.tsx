@@ -14,10 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import dotenv from "dotenv";
 import OpenAI from "openai/index.mjs";
 
-dotenv.config();
 // Define the schema for our calendar event
 const calendarEventSchema = z.object({
   summary: z.string(),
