@@ -1,4 +1,4 @@
-"use server";
+/*"use server";
 
 import { generateObject } from "ai";
 import { openai } from "@ai-sdk/openai";
@@ -46,3 +46,5 @@ export async function generateICSFile(
 
   return calendar.toString();
 }
+
+*/
